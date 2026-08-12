@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'home_page.dart';
+import 'auth_gate.dart';
 
 class IntroPage extends StatefulWidget {
   const IntroPage({super.key});
@@ -99,7 +99,7 @@ class _IntroPageState extends State<IntroPage> with TickerProviderStateMixin {
         if (mounted) {
           Navigator.of(context).pushReplacement(
             PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) => const HomePage(),
+              pageBuilder: (context, animation, secondaryAnimation) => const AuthGate(),
               transitionsBuilder: (context, animation, secondaryAnimation, child) {
                 return FadeTransition(
                   opacity: animation,

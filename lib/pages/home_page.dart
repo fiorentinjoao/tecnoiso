@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../data/auth_repository.dart';
 import '../models/equipment.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/equipment_tile.dart';
@@ -11,6 +12,7 @@ import 'equipment_list_page.dart';
 import 'schedule_page.dart';
 import 'clients_page.dart';
 import 'notifications_page.dart';
+import 'login_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -111,6 +113,12 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(height: 8),
             _buildDrawerItem(Icons.settings_outlined, 'Configurações', -1),
             _buildDrawerItem(Icons.help_outline, 'Ajuda', -1),
+            _buildDrawerItem(
+              Icons.logout,
+              'Sair',
+              -1,
+              onTap: () => _logout(context),
+            ),
             const Spacer(),
             Padding(
               padding: const EdgeInsets.all(24),
@@ -125,7 +133,12 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildDrawerItem(IconData icon, String label, int index) {
+  Widget _buildDrawerItem(
+    IconData icon,
+    String label,
+    int index, {
+    VoidCallback? onTap,
+  }) {
     final isSelected = _selectedIndex == index;
     return ListTile(
       leading: Icon(
@@ -145,10 +158,22 @@ class _HomePageState extends State<HomePage> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 24),
       onTap: () {
         Navigator.of(context).pop();
-        if (index >= 0) {
+        if (onTap != null) {
+          onTap();
+        } else if (index >= 0) {
           setState(() => _selectedIndex = index);
         }
       },
+    );
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    await AuthRepository.instance.logout();
+    if (!mounted) return;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (route) => false,
     );
   }
 
