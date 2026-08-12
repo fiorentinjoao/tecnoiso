@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
+import '../data/equipment_repository.dart';
 import '../models/equipment.dart';
 import '../widgets/fade_slide_in.dart';
 import '../widgets/tap_scale.dart';
+import 'equipment_form_page.dart';
 
-class EquipmentDetailPage extends StatelessWidget {
+class EquipmentDetailPage extends StatefulWidget {
   final Equipment equipment;
 
   const EquipmentDetailPage({super.key, required this.equipment});
 
-  Color get _statusColor {
+  @override
+  State<EquipmentDetailPage> createState() => _EquipmentDetailPageState();
+}
+
+class _EquipmentDetailPageState extends State<EquipmentDetailPage> {
+  Color _statusColorFor(Equipment equipment) {
     switch (equipment.status) {
       case 'Atrasado':
         return const Color(0xFFDC2626);
@@ -20,26 +28,89 @@ class EquipmentDetailPage extends StatelessWidget {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF09090B),
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeader(context)),
-            SliverToBoxAdapter(child: _buildStatusBanner()),
-            SliverToBoxAdapter(child: _buildInfoCard()),
-            SliverToBoxAdapter(child: _buildTimeline()),
-            SliverToBoxAdapter(child: _buildScheduleButton()),
-            const SliverToBoxAdapter(child: SizedBox(height: 32)),
-          ],
-        ),
+  void _openEdit(Equipment equipment) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EquipmentFormPage(equipment: equipment),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Future<void> _confirmDelete(Equipment equipment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF18181B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text(
+          'Excluir equipamento?',
+          style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Esta ação não pode ser desfeita.',
+          style: GoogleFonts.inter(color: Colors.white54, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('Cancelar', style: GoogleFonts.inter(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(
+              'Excluir',
+              style: GoogleFonts.inter(color: const Color(0xFFDC2626), fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final navigator = Navigator.of(context);
+    await EquipmentRepository.instance.delete(equipment.id);
+    if (!mounted) return;
+    navigator.pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Box<Equipment>>(
+      valueListenable: EquipmentRepository.instance.listenable(),
+      builder: (context, box, _) {
+        final current = EquipmentRepository.instance.getById(widget.equipment.id);
+        if (current == null) {
+          // The record was deleted (from this screen or elsewhere) — pop
+          // back rather than render a broken screen with stale data.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) Navigator.of(context).maybePop();
+          });
+          return const Scaffold(
+            backgroundColor: Color(0xFF09090B),
+            body: SizedBox.shrink(),
+          );
+        }
+        return Scaffold(
+          backgroundColor: const Color(0xFF09090B),
+          body: SafeArea(
+            child: CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: _buildHeader(context, current)),
+                SliverToBoxAdapter(child: _buildStatusBanner(current)),
+                SliverToBoxAdapter(child: _buildInfoCard(current)),
+                SliverToBoxAdapter(child: _buildTimeline(current)),
+                SliverToBoxAdapter(child: _buildScheduleButton()),
+                const SliverToBoxAdapter(child: SizedBox(height: 32)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, Equipment equipment) {
     return FadeSlideIn(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
@@ -72,6 +143,7 @@ class EquipmentDetailPage extends StatelessWidget {
               ),
             ),
             TapScale(
+              onTap: () => _openEdit(equipment),
               child: Container(
                 width: 36,
                 height: 36,
@@ -83,22 +155,37 @@ class EquipmentDetailPage extends StatelessWidget {
                 child: const Icon(Icons.edit_outlined, color: Colors.white54, size: 16),
               ),
             ),
+            const SizedBox(width: 8),
+            TapScale(
+              onTap: () => _confirmDelete(equipment),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF18181B),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                ),
+                child: const Icon(Icons.delete_outline, color: Color(0xFFDC2626), size: 16),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildStatusBanner() {
+  Widget _buildStatusBanner(Equipment equipment) {
+    final statusColor = _statusColorFor(equipment);
     return FadeSlideIn(
       delay: const Duration(milliseconds: 100),
       child: Container(
         margin: const EdgeInsets.fromLTRB(24, 20, 24, 0),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: _statusColor.withValues(alpha: 0.08),
+          color: statusColor.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _statusColor.withValues(alpha: 0.2)),
+          border: Border.all(color: statusColor.withValues(alpha: 0.2)),
         ),
         child: Row(
           children: [
@@ -106,7 +193,7 @@ class EquipmentDetailPage extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: _statusColor.withValues(alpha: 0.15),
+                color: statusColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -115,7 +202,7 @@ class EquipmentDetailPage extends StatelessWidget {
                     : equipment.isUrgent
                         ? Icons.schedule_rounded
                         : Icons.check_circle_rounded,
-                color: _statusColor,
+                color: statusColor,
                 size: 24,
               ),
             ),
@@ -129,16 +216,14 @@ class EquipmentDetailPage extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: _statusColor,
+                      color: statusColor,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     equipment.isOverdue
                         ? 'Atrasado ${-equipment.daysUntilCalibration} dias'
-                        : equipment.isUrgent
-                            ? 'Calibra em ${equipment.daysUntilCalibration} dias'
-                            : 'Calibra em ${equipment.daysUntilCalibration} dias',
+                        : 'Calibra em ${equipment.daysUntilCalibration} dias',
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       color: Colors.white54,
@@ -153,7 +238,7 @@ class EquipmentDetailPage extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoCard() {
+  Widget _buildInfoCard(Equipment equipment) {
     return FadeSlideIn(
       delay: const Duration(milliseconds: 200),
       child: Container(
@@ -215,7 +300,8 @@ class EquipmentDetailPage extends StatelessWidget {
     );
   }
 
-  Widget _buildTimeline() {
+  Widget _buildTimeline(Equipment equipment) {
+    final statusColor = _statusColorFor(equipment);
     return FadeSlideIn(
       delay: const Duration(milliseconds: 300),
       child: Container(
@@ -242,7 +328,7 @@ class EquipmentDetailPage extends StatelessWidget {
             _buildTimelineItem(
               'Próxima calibração',
               '${equipment.nextCalibration.day.toString().padLeft(2, '0')}/${equipment.nextCalibration.month.toString().padLeft(2, '0')}/${equipment.nextCalibration.year}',
-              _statusColor,
+              statusColor,
               false,
             ),
             _buildTimelineItem(

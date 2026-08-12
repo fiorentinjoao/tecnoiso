@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import '../data/auth_repository.dart';
+import '../data/equipment_repository.dart';
 import '../models/equipment.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/equipment_tile.dart';
@@ -8,6 +10,8 @@ import '../widgets/section_header.dart';
 import '../widgets/fade_slide_in.dart';
 import '../widgets/tap_scale.dart';
 import '../widgets/status_chart.dart';
+import 'equipment_detail_page.dart';
+import 'equipment_form_page.dart';
 import 'equipment_list_page.dart';
 import 'schedule_page.dart';
 import 'clients_page.dart';
@@ -23,23 +27,12 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
-  late List<Equipment> _equipments;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
-  void initState() {
-    super.initState();
-    _equipments = _getMockEquipments();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final overdue = _equipments.where((e) => e.isOverdue).length;
-    final urgent = _equipments.where((e) => e.isUrgent).length;
-    final ok = _equipments.where((e) => !e.isOverdue && !e.isUrgent).length;
-
     final pages = [
-      _buildDashboard(overdue, urgent, ok),
+      _buildDashboardListenable(),
       const EquipmentListPage(),
       const SchedulePage(),
       const ClientsPage(),
@@ -177,19 +170,41 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildDashboard(int overdue, int urgent, int ok) {
+  /// Wraps the dashboard in a listener on the equipment box so a write from
+  /// any screen (this one, the list, the form) shows up here without a
+  /// manual refresh. `EquipmentListPage` subscribes on its own and stays
+  /// untouched here.
+  Widget _buildDashboardListenable() {
+    return ValueListenableBuilder<Box<Equipment>>(
+      valueListenable: EquipmentRepository.instance.listenable(),
+      builder: (context, box, _) {
+        final equipments = EquipmentRepository.instance.all();
+        final overdue = equipments.where((e) => e.isOverdue).length;
+        final urgent = equipments.where((e) => e.isUrgent).length;
+        final ok = equipments.where((e) => !e.isOverdue && !e.isUrgent).length;
+        return _buildDashboard(equipments, overdue, urgent, ok);
+      },
+    );
+  }
+
+  Widget _buildDashboard(
+    List<Equipment> equipments,
+    int overdue,
+    int urgent,
+    int ok,
+  ) {
     return CustomScrollView(
       key: const ValueKey('dashboard'),
       slivers: [
         SliverToBoxAdapter(child: _buildHeader()),
         SliverToBoxAdapter(
-          child: FadeSlideIn(delay: const Duration(milliseconds: 100), child: _buildWelcomeBanner()),
+          child: FadeSlideIn(delay: const Duration(milliseconds: 100), child: _buildWelcomeBanner(overdue)),
         ),
         SliverToBoxAdapter(
-          child: FadeSlideIn(delay: const Duration(milliseconds: 200), child: _buildStats(overdue, urgent, ok, _equipments.length)),
+          child: FadeSlideIn(delay: const Duration(milliseconds: 200), child: _buildStats(overdue, urgent, ok, equipments.length)),
         ),
         SliverToBoxAdapter(
-          child: FadeSlideIn(delay: const Duration(milliseconds: 250), child: _buildChart(overdue, urgent, ok)),
+          child: FadeSlideIn(delay: const Duration(milliseconds: 250), child: _buildChart(equipments.length, overdue, urgent, ok)),
         ),
         SliverToBoxAdapter(
           child: FadeSlideIn(delay: const Duration(milliseconds: 300), child: _buildQuickActions()),
@@ -204,10 +219,13 @@ class _HomePageState extends State<HomePage> {
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
-                final eq = _equipments.where((e) => e.isOverdue).toList();
+                final eq = equipments.where((e) => e.isOverdue).toList();
                 return FadeSlideIn(
                   delay: Duration(milliseconds: 450 + index * 80),
-                  child: EquipmentTile(equipment: eq[index], onTap: () {}),
+                  child: EquipmentTile(
+                    equipment: eq[index],
+                    onTap: () => _openDetail(eq[index]),
+                  ),
                 );
               },
               childCount: overdue,
@@ -229,20 +247,23 @@ class _HomePageState extends State<HomePage> {
         SliverList(
           delegate: SliverChildBuilderDelegate(
             (context, index) {
-              final eq = _equipments.where((e) => e.isUrgent).toList();
+              final eq = equipments.where((e) => e.isUrgent).toList();
               if (index >= eq.length) return null;
               return FadeSlideIn(
                 delay: Duration(milliseconds: 550 + index * 80),
-                child: EquipmentTile(equipment: eq[index], onTap: () {}),
+                child: EquipmentTile(
+                  equipment: eq[index],
+                  onTap: () => _openDetail(eq[index]),
+                ),
               );
             },
-            childCount: _equipments.where((e) => e.isUrgent).length,
+            childCount: equipments.where((e) => e.isUrgent).length,
           ),
         ),
         SliverToBoxAdapter(
           child: FadeSlideIn(
             delay: const Duration(milliseconds: 600),
-            child: SectionHeader(title: 'Todos os Equipamentos', count: _equipments.length, countLabel: 'cadastrados'),
+            child: SectionHeader(title: 'Todos os Equipamentos', count: equipments.length, countLabel: 'cadastrados'),
           ),
         ),
         SliverList(
@@ -250,14 +271,29 @@ class _HomePageState extends State<HomePage> {
             (context, index) {
               return FadeSlideIn(
                 delay: Duration(milliseconds: 650 + index * 80),
-                child: EquipmentTile(equipment: _equipments[index], onTap: () {}),
+                child: EquipmentTile(
+                  equipment: equipments[index],
+                  onTap: () => _openDetail(equipments[index]),
+                ),
               );
             },
-            childCount: _equipments.length,
+            childCount: equipments.length,
           ),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 32)),
       ],
+    );
+  }
+
+  void _openDetail(Equipment equipment) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => EquipmentDetailPage(equipment: equipment)),
+    );
+  }
+
+  void _openCreateForm() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const EquipmentFormPage()),
     );
   }
 
@@ -350,7 +386,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildWelcomeBanner() {
+  Widget _buildWelcomeBanner(int overdueCount) {
     return Container(
       margin: const EdgeInsets.fromLTRB(24, 20, 24, 0),
       padding: const EdgeInsets.all(20),
@@ -375,7 +411,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Você tem ${_equipments.where((e) => e.isOverdue).length} calibrações atrasadas',
+                  'Você tem $overdueCount calibrações atrasadas',
                   style: GoogleFonts.inter(fontSize: 13, color: Colors.white54),
                 ),
               ],
@@ -427,7 +463,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildChart(int overdue, int urgent, int ok) {
+  Widget _buildChart(int total, int overdue, int urgent, int ok) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
       child: Column(
@@ -446,7 +482,7 @@ class _HomePageState extends State<HomePage> {
               border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
             ),
             child: StatusChart(
-              total: _equipments.length,
+              total: total,
               ok: ok,
               urgent: urgent,
               overdue: overdue,
@@ -470,7 +506,7 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(child: TapScale(child: _buildActionButton(Icons.add_circle_outline, 'Novo\nEquipamento'))),
+              Expanded(child: TapScale(onTap: _openCreateForm, child: _buildActionButton(Icons.add_circle_outline, 'Novo\nEquipamento'))),
               const SizedBox(width: 12),
               Expanded(child: TapScale(child: _buildActionButton(Icons.qr_code_scanner, 'Escanear\nCódigo'))),
               const SizedBox(width: 12),
@@ -556,18 +592,5 @@ class _HomePageState extends State<HomePage> {
       selectedIcon: Icon(filled, color: const Color(0xFFDC2626), size: 22),
       label: label,
     );
-  }
-
-  List<Equipment> _getMockEquipments() {
-    return [
-      Equipment(id: '1', name: 'Micrômetro Digital 0-25mm', client: 'Heineken', type: 'Medição Dimensional', brand: 'Mitutoyo', model: 'MDC-25PX', serialNumber: 'SN-2023-001', lastCalibration: DateTime(2025, 11, 15), nextCalibration: DateTime(2026, 5, 15), status: 'Atrasado'),
-      Equipment(id: '2', name: 'Termômetro Infravermelho', client: 'Coca-Cola', type: 'Temperatura', brand: 'Fluke', model: '62 MAX', serialNumber: 'SN-2023-002', lastCalibration: DateTime(2025, 12, 10), nextCalibration: DateTime(2026, 6, 10), status: 'Atrasado'),
-      Equipment(id: '3', name: 'Balança Analítica 0.1mg', client: 'Docol', type: 'Massa', brand: 'Mettler Toledo', model: 'ME204', serialNumber: 'SN-2023-003', lastCalibration: DateTime(2026, 1, 20), nextCalibration: DateTime(2026, 7, 20), status: 'Atrasado'),
-      Equipment(id: '4', name: 'Manômetro Digital 0-100bar', client: 'Portos do Paraná', type: 'Pressão', brand: 'WIKA', model: 'S-20', serialNumber: 'SN-2024-001', lastCalibration: DateTime(2026, 3, 1), nextCalibration: DateTime(2026, 7, 1), status: 'Urgente'),
-      Equipment(id: '5', name: 'Trena Metálica 5m', client: 'Descarpack', type: 'Medição Dimensional', brand: 'Starrett', model: '606M', serialNumber: 'SN-2024-002', lastCalibration: DateTime(2026, 3, 15), nextCalibration: DateTime(2026, 7, 15), status: 'Urgente'),
-      Equipment(id: '6', name: 'Dinamômetro Digital 500N', client: 'Heineken', type: 'Força', brand: 'Shimpo', model: 'FGP-500N', serialNumber: 'SN-2024-003', lastCalibration: DateTime(2026, 4, 1), nextCalibration: DateTime(2026, 10, 1), status: 'Em dia'),
-      Equipment(id: '7', name: 'Higrômetro Industrial', client: 'Coca-Cola', type: 'Umidade', brand: 'Vaisala', model: 'HMT120', serialNumber: 'SN-2024-004', lastCalibration: DateTime(2026, 4, 10), nextCalibration: DateTime(2026, 10, 10), status: 'Em dia'),
-      Equipment(id: '8', name: 'Calibrador de Pressão', client: 'Porto Itapoa', type: 'Pressão', brand: 'Druck', model: 'DPI 104', serialNumber: 'SN-2024-005', lastCalibration: DateTime(2026, 5, 1), nextCalibration: DateTime(2026, 11, 1), status: 'Em dia'),
-    ];
   }
 }

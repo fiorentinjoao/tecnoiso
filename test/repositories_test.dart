@@ -109,6 +109,30 @@ void main() {
     });
 
     test(
+        'seeded ids 1..8 carry the exact name, client and status from the original hardcoded list',
+        () async {
+      await EquipmentRepository.instance.seedIfNeeded();
+      const expected = {
+        '1': ('Micrômetro Digital 0-25mm', 'Heineken', 'Atrasado'),
+        '2': ('Termômetro Infravermelho', 'Coca-Cola', 'Atrasado'),
+        '3': ('Balança Analítica 0.1mg', 'Docol', 'Atrasado'),
+        '4': ('Manômetro Digital 0-100bar', 'Portos do Paraná', 'Urgente'),
+        '5': ('Trena Metálica 5m', 'Descarpack', 'Urgente'),
+        '6': ('Dinamômetro Digital 500N', 'Heineken', 'Em dia'),
+        '7': ('Higrômetro Industrial', 'Coca-Cola', 'Em dia'),
+        '8': ('Calibrador de Pressão', 'Porto Itapoa', 'Em dia'),
+      };
+
+      for (final entry in expected.entries) {
+        final equipment = EquipmentRepository.instance.getById(entry.key);
+        expect(equipment, isNotNull, reason: 'missing seeded id ${entry.key}');
+        expect(equipment!.name, entry.value.$1, reason: 'id ${entry.key} name');
+        expect(equipment.client, entry.value.$2, reason: 'id ${entry.key} client');
+        expect(equipment.status, entry.value.$3, reason: 'id ${entry.key} status');
+      }
+    });
+
+    test(
         'after deleting every record, seedIfNeeded inserts nothing (no resurrection)',
         () async {
       await EquipmentRepository.instance.seedIfNeeded();
